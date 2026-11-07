@@ -1,0 +1,18 @@
+{
+    "name": "claude-pad",
+    "description": "GameGo as a USB keyboard controller for Claude Code / Codex",
+    "dependencies": {
+        "device": "*",
+        "keyboard": "*",
+        "hw---stm32f401": "*"
+    },
+    "files": [
+        "main.ts",
+        "usbstat.cpp",
+        "shims.d.ts"
+    ],
+    "targetVersions": {
+        "target": "arcade"
+    },
+    "preferredEditor": "tsprj"
+}

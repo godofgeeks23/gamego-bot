@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Link Mirror</title>
+<style>
+  :root {
+    --bg: #0e0d12; --panel: #1a1820; --text: #e9e6ef; --muted: #8d879a;
+    --accent: #ff8135; --ok: #78dc52; --bad: #ff4a4a; --line: #2c2934;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  #bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  #bar h1 { font-size: 15px; margin: 0 12px 0 0; letter-spacing: .04em; }
+  #bar h1 span { color: var(--accent); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+    background: #24212c; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--bad); }
+  button, select { font: inherit; color: var(--text); background: #2a2632; border: 1px solid #3a3544;
+    border-radius: 8px; padding: 5px 12px; cursor: pointer; }
+  button:hover { background: #343040; }
+  button.rec { border-color: #7a2c2c; }
+  button.rec.on { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .spacer { flex: 1; }
+  .hint { color: var(--muted); font-size: 12px; }
+  #stagewrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px; min-height: 0; }
+  #stage { max-width: 100%; max-height: 100%; object-fit: contain; }
+  body.clean #bar { display: none; }
+  body.clean #stagewrap { padding: 0; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #2a2632;
+    padding: 8px 16px; border-radius: 8px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  /* the simulator wants these elements; keep them out of sight */
+  #wrap { position: absolute; left: -9999px; top: 0; width: 1px; height: 1px; overflow: hidden; }
+  @media (max-width: 640px) { .hint { display: none; } }
+</style>
+</head>
+<body>
+<div id="bar">
+  <h1>CLAUDE <span>LINK</span> mirror</h1>
+  <span class="pill"><span id="dHelper" class="dot"></span>helper</span>
+  <span class="pill"><span id="dDevice" class="dot"></span>GameGo</span>
+  <div class="spacer"></div>
+  <select id="view" title="Layout (V)">
+    <option value="device">Device frame</option>
+    <option value="screen">Screen only</option>
+  </select>
+  <button id="sound" title="Toggle simulator sound (M)">Sound: off</button>
+  <button id="snap" title="Save a PNG (S)">Snapshot</button>
+  <button id="rec" class="rec" title="Record a video (R)">● Record</button>
+  <button id="clean" title="Hide this bar (H)">Present</button>
+  <span class="hint">H hide · F fullscreen · R record · S snapshot · V layout</span>
+</div>
+<div id="stagewrap"><canvas id="stage" role="img" aria-label="Live GameGo display and physical button indicators"></canvas></div>
+<div id="toast"></div>
+
+<div id="wrap"><div id="root"><canvas id="game-screen" width="160" height="128"></canvas>
+  <div id="game-buttons-container"></div><div id="joystick-container"></div>
+  <div id="debug-stats"></div><div id="safari-enable-game"></div></div></div>
+
+<script src="pxtsim.js"></script>
+<script src="common-sim.js"></script>
+<script src="sim.js"></script>
+<script>
+'use strict';
+// ------------------------------------------------------------------ fake mailbox
+// The firmware's C++ mailbox (padlink) is replaced with data streamed from the helper.
+const MB = { hb: 0, seq: 1, t0: 'WAITING|start the helper||0', t1: '', t2: '|0||', mseq: 0, mmask: 0, mframes: [] };
+let helperUp = false;
+setInterval(() => { if (helperUp) MB.hb++; }, 100); // heartbeat => firmware shows LINKED
+
+pxsim.padlink = {
+  addr: () => 0x20001000, announce: () => {},
+  heartbeat: () => MB.hb, textSeq: () => MB.seq,
+  text: (slot) => (slot === 0 ? MB.t0 : slot === 1 ? MB.t1 : MB.t2),
+  usbReady: () => true,
+  mascotSeq: () => MB.mseq, mascotMask: () => MB.mmask,
+  mascotFrame: (i) => new pxsim.RefBuffer(MB.mframes[i] || new Uint8Array(512)),
+};
+
+// ------------------------------------------------------------------ live feed
+const KEY = { A: 'A', B: 'B', UP: 'Up', DOWN: 'Down', LEFT: 'Left', RIGHT: 'Right', MENU: 'Menu' };
+const pressed = {};
+let lastMascotSeq = -1;
+
+function b64(s) { const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+
+function setDot(id, on) { const d = document.getElementById(id); d.className = 'dot ' + (on ? 'on' : 'off'); }
+
+function connect() {
+  const es = new EventSource('events');
+  es.addEventListener('state', (e) => {
+    const st = JSON.parse(e.data);
+    helperUp = true; setDot('dHelper', true); setDot('dDevice', st.device);
+    MB.t0 = st.t0; MB.t1 = st.t1; MB.t2 = st.t2;
+    if (st.mascot && st.mascot.seq !== lastMascotSeq) {
+      lastMascotSeq = st.mascot.seq;
+      MB.mmask = st.mascot.mask;
+      MB.mframes = (st.mascot.frames || []).map(b64);
+      MB.mseq++;
+    }
+    MB.seq++;
+  });
+  es.addEventListener('btn', (e) => {
+    const { ev, btn } = JSON.parse(e.data);
+    if (ev === 'R' || !KEY[btn]) return; // the simulator repeats held buttons itself
+    const down = ev === 'D';
+    pressed[btn] = down;
+    if (window.pxsim && pxsim.runtime && pxsim.runtime.board) pxsim.runtime.board.setButton(pxsim.Key[KEY[btn]], down);
+  });
+  es.onerror = () => { helperUp = false; setDot('dHelper', false); setDot('dDevice', false); };
+}
+
+// ------------------------------------------------------------------ run firmware in the simulator
+let muted = true;
+fetch('binary.js').then((r) => r.text()).then((code) => {
+  pxsim.Embed.run({ type: 'run', id: 'mirror', code, options: {}, frameCounter: 1, mute: true, fnArgs: {} });
+  const wait = setInterval(() => {
+    const b = pxsim.runtime && pxsim.runtime.board;
+    if (!b) return;
+    clearInterval(wait);
+    b.disableKeyEvents = true; // our shortcuts must not press GameGo buttons
+    connect();
+  }, 50);
+});
+
+// ------------------------------------------------------------------ stage drawing
+const stage = document.getElementById('stage');
+const ctx = stage.getContext('2d');
+const screenCv = document.createElement('canvas'); screenCv.width = 160; screenCv.height = 128;
+const sctx = screenCv.getContext('2d');
+let view = 'device';
+const SCALE = 4; // 640x512 screen
+const DEVICE = {
+  width: 547, height: 782,
+  screen: { x: 113, y: 99, width: 325, height: 281 },
+  buttons: {
+    UP: [137, 462, 26], DOWN: [137, 597, 26],
+    LEFT: [70, 529, 26], RIGHT: [204, 529, 26],
+    A: [470, 481, 26], B: [375, 576, 26], MENU: [239, 687, 24],
+  },
+};
+const devicePhoto = new Image();
+devicePhoto.src = 'gamego-front.png';
+devicePhoto.onerror = () => { setView('screen'); toast('Device photo unavailable; showing screen only'); };
+
+function layout() {
+  if (view === 'screen') { stage.width = 160 * SCALE; stage.height = 128 * SCALE; }
+  else { stage.width = DEVICE.width; stage.height = DEVICE.height; }
+  stage.style.imageRendering = view === 'screen' ? 'pixelated' : 'auto';
+}
+
+function drawDevice() {
+  ctx.clearRect(0, 0, stage.width, stage.height);
+  ctx.imageSmoothingEnabled = true;
+  if (devicePhoto.complete && devicePhoto.naturalWidth) ctx.drawImage(devicePhoto, -90, 0, 637, 782);
+  const screen = DEVICE.screen;
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(screen.x, screen.y, screen.width, screen.height, 5); ctx.clip();
+  ctx.fillStyle = '#000'; ctx.fillRect(screen.x, screen.y, screen.width, screen.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(screenCv, screen.x, screen.y, screen.width, screen.height);
+  ctx.restore();
+  for (const [button, [centerX, centerY, radius]] of Object.entries(DEVICE.buttons)) {
+    if (!pressed[button]) continue;
+    const yellow = button === 'A' || button === 'B';
+    ctx.save();
+    ctx.shadowColor = yellow ? '#ffe750' : '#87f2ff'; ctx.shadowBlur = 18;
+    ctx.strokeStyle = ctx.shadowColor; ctx.lineWidth = 3;
+    ctx.fillStyle = yellow ? 'rgba(255, 245, 160, .65)' : 'rgba(135, 242, 255, .55)';
+    ctx.beginPath(); ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function frame() {
+  const b = pxsim.runtime && pxsim.runtime.board;
+  const s = b && b.screenState;
+  if (s && s.screen && s.width === 160) {
+    sctx.putImageData(new ImageData(new Uint8ClampedArray(s.screen.buffer.slice(0)), s.width, s.height), 0, 0);
+  }
+  if (view === 'screen') { ctx.imageSmoothingEnabled = false; ctx.drawImage(screenCv, 0, 0, stage.width, stage.height); }
+  else drawDevice();
+  requestAnimationFrame(frame);
+}
+layout(); requestAnimationFrame(frame);
+
+// ------------------------------------------------------------------ controls
+const toastEl = document.getElementById('toast');
+function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove('show'), 1800); }
+function stamp() { return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-'); }
+function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
+
+const viewSel = document.getElementById('view');
+function setView(v) { view = v; viewSel.value = v; layout(); }
+viewSel.onchange = () => setView(viewSel.value);
+
+const soundBtn = document.getElementById('sound');
+function toggleSound() { muted = !muted; pxsim.AudioContextManager.mute(muted); soundBtn.textContent = 'Sound: ' + (muted ? 'off' : 'on'); }
+soundBtn.onclick = toggleSound;
+
+function snapshot() { stage.toBlob((b) => { download(b, `claude-link-${stamp()}.png`); toast('Snapshot saved'); }); }
+document.getElementById('snap').onclick = snapshot;
+
+let recorder = null, chunks = [];
+const recBtn = document.getElementById('rec');
+function toggleRecord() {
+  if (recorder) { recorder.stop(); return; }
+  const types = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm'];
+  const mimeType = types.find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
+  if (!mimeType) { toast('Recording not supported in this browser'); return; }
+  chunks = [];
+  recorder = new MediaRecorder(stage.captureStream(30), { mimeType, videoBitsPerSecond: 8_000_000 });
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  recorder.onstop = () => {
+    const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+    download(new Blob(chunks, { type: mimeType }), `claude-link-${stamp()}.${ext}`);
+    recorder = null; recBtn.classList.remove('on'); recBtn.textContent = '● Record'; toast('Recording saved');
+  };
+  recorder.start(250);
+  recBtn.classList.add('on'); recBtn.textContent = '■ Stop';
+  toast('Recording… (R to stop)');
+}
+recBtn.onclick = toggleRecord;
+
+function toggleClean() { document.body.classList.toggle('clean'); }
+document.getElementById('clean').onclick = toggleClean;
+
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'h' || (k === 'escape' && document.body.classList.contains('clean'))) toggleClean();
+  else if (k === 'f') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+  else if (k === 'r') toggleRecord();
+  else if (k === 's') snapshot();
+  else if (k === 'v') setView(view === 'device' ? 'screen' : 'device');
+  else if (k === 'm') toggleSound();
+  else return;
+  e.preventDefault();
+}, true);
+</script>
+</body>
+</html>

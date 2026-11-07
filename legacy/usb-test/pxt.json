@@ -1,0 +1,16 @@
+{
+    "name": "usb-test",
+    "dependencies": {
+        "device": "*",
+        "hw---stm32f401": "*"
+    },
+    "files": [
+        "main.ts",
+        "usbstat.cpp",
+        "shims.d.ts"
+    ],
+    "targetVersions": {
+        "target": "arcade"
+    },
+    "preferredEditor": "tsprj"
+}

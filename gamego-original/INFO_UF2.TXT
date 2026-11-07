@@ -1,0 +1,3 @@
+UF2 Bootloader v2.7.5 W
+Model: TinkerGen Ltd. / TinkerGen GameGo
+Board-ID: STM32F4xx-Arcade-Generic

@@ -1,0 +1,17 @@
+{
+  "name": "claude-link",
+  "version": "0.3.0",
+  "description": "Mac helper: GameGo buttons -> keystrokes for Claude Code / Codex",
+  "main": "claude-link.js",
+  "scripts": {
+    "start": "node claude-link.js",
+    "dry": "node claude-link.js --dry-run --verbose"
+  },
+  "dependencies": {
+    "usb": "^2.14.0",
+    "pngjs": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

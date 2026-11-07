@@ -1,0 +1,24 @@
+{
+  "tapMs": 450,
+  "base": {
+    "A":     { "label": "ENTER",     "hint": "send / approve",   "do": [{ "key": "return" }] },
+    "B":     { "label": "ESC",       "hint": "interrupt",        "do": [{ "key": "escape" }] },
+    "UP":    { "label": "UP",        "hint": "navigate",         "do": [{ "key": "up" }],    "repeat": true },
+    "DOWN":  { "label": "DOWN",      "hint": "navigate",         "do": [{ "key": "down" }],  "repeat": true },
+    "LEFT":  { "label": "LEFT",      "hint": "navigate",         "do": [{ "key": "left" }],  "repeat": true },
+    "RIGHT": { "label": "RIGHT",     "hint": "navigate",         "do": [{ "key": "right" }], "repeat": true },
+    "MENU":  { "label": "SHIFT+TAB", "hint": "cycle mode",       "do": [{ "key": "tab", "mods": ["shift"] }] }
+  },
+  "combo": {
+    "A":     { "label": "CTRL+C",    "hint": "cancel / exit",    "do": [{ "key": "c", "mods": ["control"] }] },
+    "UP":    { "label": "CONTINUE",  "hint": "macro sent",       "do": [{ "text": "continue" }, { "key": "return" }] },
+    "DOWN":  { "label": "ESC ESC",   "hint": "rewind / edit prev", "do": [{ "key": "escape" }, { "delay": 80 }, { "key": "escape" }] },
+    "LEFT":  { "label": "PREV TAB",  "hint": "previous session", "do": [{ "key": "[", "mods": ["command", "shift"] }] },
+    "RIGHT": { "label": "NEXT TAB",  "hint": "next session",     "do": [{ "key": "]", "mods": ["command", "shift"] }] },
+    "MENU":  { "label": "/",         "hint": "slash commands",   "do": [{ "text": "/" }] }
+  },
+  "legend": {
+    "base":  ["A=Enter", "B=Esc", "PAD=Arrows", "MENU=Shift+Tab", "hold B=more..."],
+    "combo": ["B+A=Ctrl+C", "B+UP=continue", "B+DOWN=Esc Esc", "B+LEFT=prev tab", "B+RIGHT=next tab", "B+MENU=/ cmds"]
+  }
+}

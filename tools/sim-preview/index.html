@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8">
+<style>body{margin:0;background:#222} #out{image-rendering:pixelated;width:640px;height:512px}</style>
+</head><body>
+<div id="wrap"><div id="root"><canvas id="game-screen" width="160" height="128"></canvas>
+<div id="game-buttons-container"></div><div id="joystick-container"></div><div id="debug-stats"></div><div id="safari-enable-game"></div></div></div>
+<canvas id="out" width="160" height="128"></canvas>
+<script src="pxtsim.js"></script><script src="common-sim.js"></script><script src="sim.js"></script>
+<script>
+// fake mailbox driven from Playwright via window.MB
+window.MB = { hb: 1, seq: 1, t0: 'READY|press a button|Terminal|0', t1: '', t2: '|0|', usb: true };
+setInterval(() => { if (MB.live !== false) MB.hb++; }, 100);
+pxsim.padlink = {
+  addr: () => 0x20001000, announce: () => {}, heartbeat: () => MB.hb, textSeq: () => MB.seq,
+  text: (slot) => (slot === 0 ? MB.t0 : slot === 1 ? MB.t1 : MB.t2), usbReady: () => MB.usb,
+  mascotSeq: () => MB.mseq || 0, mascotMask: () => MB.mmask || 0,
+  mascotFrame: (i) => new pxsim.RefBuffer(new Uint8Array((MB.mframes && MB.mframes[i]) || new Array(512).fill(0))),
+};
+window.errors = [];
+window.onerror = (m) => errors.push(String(m));
+fetch('binary.js').then(r => r.text()).then(code => {
+  pxsim.Embed.run({ type: 'run', id: 'x', code, options: {}, frameCounter: 1, mute: true, fnArgs: {} });
+});
+</script></body></html>

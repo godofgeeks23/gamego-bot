@@ -1,0 +1,17 @@
+{
+    "name": "claude-link",
+    "description": "GameGo controller that talks to a Mac helper over USB (HF2)",
+    "dependencies": {
+        "device": "*",
+        "hw---stm32f401": "*"
+    },
+    "files": [
+        "main.ts",
+        "padlink.cpp",
+        "shims.d.ts"
+    ],
+    "targetVersions": {
+        "target": "arcade"
+    },
+    "preferredEditor": "tsprj"
+}
