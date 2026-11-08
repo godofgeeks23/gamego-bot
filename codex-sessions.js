@@ -109,9 +109,6 @@ function createCodexMonitor(home, onSession, onRemove, onError) {
       for (const [file, session] of files) {
         try {
           for (const row of await readRows(file, session)) applyRow(session, row);
-          if (now - session.at > MAX_AGE) {
-            onRemove(session.id); files.delete(file); continue;
-          }
           const update = { id: session.id, cwd: session.cwd, title: titles.get(session.id) || '',
             state: session.state, text: session.text, at: session.at };
           const signature = JSON.stringify(update);

@@ -124,8 +124,18 @@ including sessions that predate helper startup. Thread IDs are the keys, not wor
 names come from `session_index.jsonl`, prefixed `C:`. Internal subagents are excluded.
 Reads are asynchronous and bounded to the latest 1 MiB per file; incomplete JSONL lines are retried.
 Initial history does not replay completion chimes. Hooks take precedence over older transcript events.
-The existing three-hour visibility limit and five-row screen limit also apply to Codex.
+The three-hour cutoff applies only to initial Codex discovery, not retention of known sessions.
+Known sessions remain until SessionEnd or rollout removal. Without either signal, closed Codex
+sessions can remain listed. The five-row screen rotates overflow pages every five seconds;
+the approval banner continues to represent pending approvals across all pages.
 Set `CLAUDE_LINK_CODEX_HOME` to override the monitored home, useful for isolated tests.
+
+`claude-sessions.js` polls Claude's local `sessions/<pid>.json` registry every two seconds.
+It discovers live interactive/background sessions regardless of last activity time, uses
+registry status/name as fallback, and removes sessions when their process exits or record disappears.
+Newer hooks win over older registry statuses; SessionEnd prevents stale records resurrecting a row.
+The registry is internal, verified against installed Claude Code 2.1.319; older versions without it
+remain hook-only. Set `CLAUDE_LINK_CLAUDE_HOME` (or `CLAUDE_CONFIG_DIR`) to override `~/.claude`.
 
 State mapping (helper): SessionStart→I ready; UserPromptSubmit→W thinking; PreToolUse→W `<tool> <detail>`;
 PostToolUse→W thinking (clears approval); PermissionRequest / Notification `permission_prompt`→A;
@@ -196,6 +206,7 @@ shows the current artwork. See `mascot/README.md` for provenance.
 | `keys.jxa.js` | keystroke worker (osascript JXA) |
 | `install-hooks.js` | add/remove Claude Code and Codex lifecycle hooks |
 | `codex-sessions.js` | automatic discovery, names, and activity from local Codex rollouts |
+| `claude-sessions.js` | running Claude discovery, idle status, and process closure |
 | `config.json` | button mapping + legend |
 | `firmware/` | `main.ts`, `padlink.cpp`, `shims.d.ts`, `pxt.json`, `build.sh` |
 | `mascot/` | custom PNGs (`examples/` has a sample + blank template) |

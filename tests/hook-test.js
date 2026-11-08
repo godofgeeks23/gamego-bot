@@ -149,6 +149,55 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await codex(null);
   await codex({ type: 'unknown', 'thread-id': 'unrecognised' });
   assert(!snap().includes('C:cod-sed'));
+  const originalNow = Date.now;
+  let clock = Math.ceil((originalNow() + 4 * 3600000) / 10000) * 10000;
+  Date.now = () => clock;
+  await hook({ ...base('idle', '/projects/idle'), hook_event_name: 'SessionStart' });
+  await wait(200);
+  assert(snap().includes('W|web|thinking'), 'Claude remains visible after four hours');
+  assert(snap().includes('D|C:api-two|done'), 'Codex remains visible after four hours');
+  assert(snap().includes('I|idle|ready'), 'idle sessions have their own status');
+  await hook({ ...base('s2', '/projects/web'), hook_event_name: 'SessionEnd' });
+  await hook({ ...base('idle', '/projects/idle'), hook_event_name: 'SessionEnd' });
+  await codex({ session_id: 'codex-two', hook_event_name: 'SessionEnd' });
+  for (let index = 0; index < 7; index++) {
+    await hook({ ...base(`page${index}`, `/projects/page${index}`), hook_event_name: 'SessionStart' });
+  }
+  await wait(200);
+  const pages = new Set(snap().split('\n').slice(1).map(row => row.split('|')[1]));
+  assert.equal(pages.size, 5);
+  clock += 5000;
+  await wait(700);
+  for (const row of snap().split('\n').slice(1)) pages.add(row.split('|')[1]);
+  assert.equal(pages.size, 7, 'overflow pages expose every session instead of hiding idle rows');
+  for (let index = 0; index < 7; index++) {
+    await hook({ ...base(`page${index}`, `/projects/page${index}`), hook_event_name: 'SessionEnd' });
+  }
+  Date.now = originalNow;
+  const fs = require('fs');
+  const registry = path.join(process.env.CLAUDE_LINK_CLAUDE_HOME, 'sessions');
+  fs.mkdirSync(registry, { recursive: true });
+  const recordFile = path.join(registry, `${process.pid}.json`);
+  const record = { pid: process.pid, sessionId: 'discovered', cwd: '/projects/discovered',
+    kind: 'interactive', name: 'discovered', status: 'idle', statusUpdatedAt: Date.now() - 86400000 };
+  fs.writeFileSync(recordFile, JSON.stringify(record));
+  await wait(2300);
+  assert(snap().includes('I|discovered|idle'), 'discover an already-idle Claude session without a hook');
+  await hook({ ...base('discovered', record.cwd), hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'npm test' } });
+  await wait(200);
+  fs.writeFileSync(recordFile, JSON.stringify({ ...record, name: 'renamed' }));
+  await wait(2300);
+  assert(snap().includes('A|renamed|Bash npm test'), 'old registry status cannot overwrite a newer approval hook');
+  await hook({ ...base('discovered', record.cwd), hook_event_name: 'SessionEnd' });
+  fs.writeFileSync(recordFile, JSON.stringify({ ...record, name: 'closed' }));
+  await wait(2300);
+  assert(!snap().includes('\nI|closed|'), 'stale registry metadata cannot resurrect an ended session');
+  fs.writeFileSync(recordFile, JSON.stringify({ ...record, sessionId: 'other', name: 'resumed' }));
+  await wait(2300);
+  assert(snap().includes('I|resumed|idle'));
+  fs.unlinkSync(recordFile);
+  await wait(2300);
+  assert(!snap().includes('|resumed|'), 'closed registered sessions leave the device list');
   const ok = /\|api\|Edit server\.ts/.test(r.working)
     && r.approval.startsWith('A|') && r.approval.includes('APPROVE?|web: Bash npm test') && /\nA\|web\|/.test(r.approval)
     && r.afterApprove.startsWith('|') && /W\|web\|thinking/.test(r.afterApprove)

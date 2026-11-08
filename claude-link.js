@@ -361,7 +361,7 @@ function shortDetail(tool, input) {
   }
 }
 
-function sessionFor(ev) {
+function sessionFor(ev, at = Date.now()) {
   const id = ev.session_id || 'unknown';
   let s = sessions.get(id);
   if (!s) {
@@ -372,7 +372,7 @@ function sessionFor(ev) {
     sessions.set(id, s);
   }
   if (ev.transcript_path && ev.transcript_path !== s.transcript) { s.transcript = ev.transcript_path; s.tOff = 0; }
-  s.at = Date.now();
+  s.at = at;
   refreshTitle(s);
   return s;
 }
@@ -442,7 +442,10 @@ function refreshAlert() {
 function onClaudeHook(ev) {
   const e = ev.hook_event_name || '';
   if (VERBOSE) log('hook', e, ev.tool_name || ev.notification_type || '');
-  if (e === 'SessionEnd') { sessions.delete(ev.session_id); return changed(); }
+  if (e === 'SessionEnd') {
+    claudeEnded.set(ev.session_id, Date.now()); sessions.delete(ev.session_id); return changed();
+  }
+  claudeEnded.delete(ev.session_id);
   const s = sessionFor(ev);
   switch (e) {
     case 'SessionStart': s.state = 'I'; s.text = 'ready'; break;
@@ -466,6 +469,23 @@ function onClaudeHook(ev) {
       raise('D', 'DONE', s.name, s.id, 5000);
       break;
     default: break;
+  }
+  changed();
+}
+
+const claudeEnded = new Map();
+function updateClaudeSession(update) {
+  if ((claudeEnded.get(update.id) || 0) >= update.at) return;
+  claudeEnded.delete(update.id);
+  const previous = sessions.get(update.id);
+  const session = sessionFor({ session_id: update.id, cwd: update.cwd }, previous ? previous.at : update.at);
+  if (update.title) {
+    session.agentName = update.title;
+    if (!session.title) session.name = update.title;
+  }
+  if (update.at >= session.at) {
+    if (session.state !== update.state || !previous) session.text = update.text;
+    session.state = update.state; session.at = update.at;
   }
   changed();
 }
@@ -522,10 +542,10 @@ function claudeText() {
     if (s.state === 'A' && Date.now() - s.at > 10 * 60 * 1000) { s.state = 'I'; s.text = 'your turn'; }
   refreshAlert();
   const order = { A: 0, W: 1, I: 2, D: 3 };
-  const rows = [...sessions.values()]
-    .filter((s) => Date.now() - s.at < 3 * 3600 * 1000)
-    .sort((a, b) => order[a.state] - order[b.state] || b.at - a.at)
-    .slice(0, 5)
+  const sorted = [...sessions.values()]
+    .sort((a, b) => order[a.state] - order[b.state] || b.at - a.at || a.id.localeCompare(b.id));
+  const page = Math.floor(Date.now() / 5000) % Math.max(1, Math.ceil(sorted.length / 5));
+  const rows = sorted.slice(page * 5, page * 5 + 5)
     .map((s) => `${s.state}|${s.name.replace(/[|\r\n]/g, ' ').slice(0, 10)}|${s.text.replace(/[|\r\n]/g, ' ').slice(0, 15)}`);
   const head = `${alert.kind}|${alert.seq}|${alert.head}|${alert.detail.replace(/[|\n]/g, ' ').slice(0, 28)}`;
   let out = head;
@@ -545,7 +565,7 @@ function changed() {
 }
 // expire DONE / YOUR TURN banners
 setInterval(() => {
-  if ((alert.until && Date.now() > alert.until) ||
+  if (sessions.size > 5 || (alert.until && Date.now() > alert.until) ||
       [...sessions.values()].some(s => s.state === 'A' && Date.now() - s.at > 10 * 60 * 1000)) changed();
 }, 500);
 
@@ -554,6 +574,10 @@ const pollCodex = require('./codex-sessions').createCodexMonitor(codexHome, upda
   const id = 'codex:' + rawId;
   if (sessions.delete(id)) changed();
 }, error => { if (VERBOSE) log('Codex monitor:', error.message); });
+const claudeHome = process.env.CLAUDE_LINK_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(require('os').homedir(), '.claude');
+const pollClaude = require('./claude-sessions').createClaudeMonitor(claudeHome, updateClaudeSession, id => {
+  if (sessions.delete(id)) changed();
+}, error => { if (VERBOSE) log('Claude monitor:', error.message); });
 
 const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.startsWith('/mirror')) return mirrorHttp(req, res);
@@ -583,6 +607,8 @@ server.listen(HOOK_PORT, '127.0.0.1', () => {
   tryConnect();
   setInterval(pollCodex, 2000);
   pollCodex();
+  setInterval(pollClaude, 2000);
+  pollClaude();
 });
 
 // ---------------------------------------------------------------- screen mirror

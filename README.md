@@ -19,6 +19,12 @@ Full background, design and protocol notes: **[docs/SESSION-HANDOFF.md](docs/SES
 Run only one helper at a time. A second launch exits if the hook port is already in use,
 before opening USB. Stop the existing helper with Ctrl+C before restarting it.
 
+Claude sessions are discovered from the local running-process registry every two seconds,
+including sessions already idle when the helper starts. Hooks provide detailed activity
+and approval status. Idle sessions stay listed until they close, not until a timer runs out.
+If more than five sessions are open, the screen rotates through five-row pages every five
+seconds; pending approval banners remain visible on every page. No firmware update is needed.
+
 The helper automatically discovers recently active local Codex sessions from
 `$CODEX_HOME/sessions` (default `~/.codex/sessions`), including sessions already running.
 It polls activity every two seconds and discovers new sessions within ten seconds.
@@ -31,9 +37,11 @@ activity, approval alerts, completion, interruption, and session closure. Your e
 `notify` command (including Computer Use) is preserved. [Codex hook documentation](https://learn.chatgpt.com/docs/hooks).
 
 Without trusted hooks, local transcripts still provide working/done/interrupted and
-input-request states, but approval alerts are best-effort. Only sessions active in the
-last three hours are shown, with up to five rows shared with Claude. Transcript formats
-are internal and may change; remote sessions without local logs are not discovered.
+input-request states, but approval alerts are best-effort. The initial Codex discovery scans
+the last three hours; once discovered, sessions no longer expire just because they are idle.
+Codex sessions close on a SessionEnd hook or removal of their rollout file; without those
+signals a closed session can remain listed. Claude's registry and Codex transcript formats
+are internal and may change; remote sessions without local records are not discovered.
 
 ## Screen mirror (for demos)
 While `node claude-link.js` runs, open **http://127.0.0.1:47821/mirror** in Chrome or Safari.
@@ -74,7 +82,7 @@ Device-view PNG snapshots preserve the transparent background; video formats may
 ## Folder
 | | |
 |---|---|
-| `claude-link.js`, `codex-sessions.js`, `mascot.js`, `keys.jxa.js`, `install-hooks.js`, `config.json` | Mac helper |
+| `claude-link.js`, `claude-sessions.js`, `codex-sessions.js`, `mascot.js`, `keys.jxa.js`, `install-hooks.js`, `config.json` | Mac helper |
 | `firmware/` | GameGo source + `build.sh` to rebuild `claude-link.uf2` |
 | `mascot/` | your custom mascot PNGs |
 | `images/` | screenshots of every screen state |

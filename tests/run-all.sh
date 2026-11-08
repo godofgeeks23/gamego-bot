@@ -8,19 +8,20 @@ cd "$(dirname "$0")/.."
 
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
-cp claude-link.js codex-sessions.js install-hooks.js mascot.js keys.jxa.js config.json package.json "$T"/
+cp claude-link.js claude-sessions.js codex-sessions.js install-hooks.js mascot.js keys.jxa.js config.json package.json "$T"/
 ln -s "$PWD/node_modules" "$T/node_modules"
 mkdir "$T/mascot"
-mkdir "$T/tests" "$T/codex"
+mkdir "$T/tests" "$T/codex" "$T/claude"
 cp tests/*.js "$T/tests/"
 export CLAUDE_LINK_CODEX_HOME="$T/codex"
+export CLAUDE_LINK_CLAUDE_HOME="$T/claude"
 export CLAUDE_LINK_PORT=$(node -e 'const server = require("net").createServer(); server.listen(0, "127.0.0.1", () => { console.log(server.address().port); server.close(); }); server.on("error", () => process.exit(1));')
 [ -n "$CLAUDE_LINK_PORT" ] || exit 1
 cp mascot/examples/test-bot.png "$T/mascot/idle.png"
 cp mascot/examples/test-bot.png "$T/mascot/work.png"
 
 fail=0
-for t in startup-test mock-test mock-long hook-test rename-test mascot-test codex-test; do
+for t in startup-test mock-test mock-long hook-test rename-test mascot-test codex-test claude-test; do
   if out=$(node "$T/tests/$t.js" "$T/claude-link.js" 2>&1); then
     echo "PASS  $t"
   else

@@ -74,7 +74,10 @@ const poll = createCodexMonitor(home, (session, initial) => {
   assert(seen.has('thread-three'), 'discover sessions created while running');
   assert(removed.includes('thread-two'));
   await poll(now + 4 * 3600000);
-  assert.equal(seen.size, 0, 'expired sessions are removed');
+  assert.equal(seen.size, 2, 'known sessions stay listed even after hours without activity');
+  fs.unlinkSync(first);
+  await poll(now + 4 * 3600000);
+  assert(!seen.has('thread-one'), 'removed rollouts are still retired');
   assert.deepEqual(errors, []);
 
   const configHome = path.join(home, 'config-home');
@@ -105,6 +108,6 @@ const poll = createCodexMonitor(home, (session, initial) => {
   fs.writeFileSync(path.join(codex, 'config.toml'), 'notify = ["curl", "http://127.0.0.1:47821/codex"] # claude-link\n[features]\nhooks = true\n');
   install();
   assert.equal(fs.readFileSync(path.join(codex, 'config.toml'), 'utf8'), '[features]\nhooks = true\n');
-  console.log('PASS: Codex discovery, state transitions, names, partial writes, expiration, and hook installation');
+  console.log('PASS: Codex discovery, state transitions, names, partial writes, idle retention, and hook installation');
 })().catch(error => { console.error(error); process.exitCode = 1; })
   .finally(() => fs.rmSync(home, { recursive: true, force: true }));
